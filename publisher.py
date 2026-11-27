@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 
-from . import instagram, linkedin, state, telegram_bot
+import instagram, linkedin, state, telegram_bot
 
 LINKEDIN_MAX_PER_DAY = int(os.getenv("LINKEDIN_MAX_PER_DAY") or "4")
 LINKEDIN_MIN_IMPORTANCE = int(os.getenv("LINKEDIN_MIN_IMPORTANCE") or "4")

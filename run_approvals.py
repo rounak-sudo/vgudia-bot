@@ -10,9 +10,9 @@ import shutil
 import sys
 import traceback
 
-from src import state, telegram_bot
-from src.poster import generate_image
-from src.publisher import publish_entry
+import state, telegram_bot
+from poster import generate_image
+from publisher import publish_entry
 
 PENDING_HOURS = int(os.getenv("PENDING_HOURS") or "6")   # unhandled drafts expire (news goes stale)
 KEEP_DRAFT_DAYS = 3                                       # old draft folders are deleted

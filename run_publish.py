@@ -9,8 +9,8 @@ import sys
 import time
 import traceback
 
-from src import state
-from src.publisher import notify, publish_entry
+import state
+from publisher import notify, publish_entry
 
 MAX_ATTEMPTS = 3
 

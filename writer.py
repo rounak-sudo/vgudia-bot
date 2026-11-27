@@ -1,8 +1,8 @@
 """Use Claude to pick the best market story and write the vGudia post in Bengali."""
 from __future__ import annotations
 
-from .llm import ask_json
-from .news import Story
+from llm import ask_json
+from news import Story
 
 SYSTEM = """You are the senior editor of vGudia, a Bengali financial-news page on Instagram (tagline: "Making Market Simple | বাজারকে সহজ করা"). Your readers are everyday Bengali investors in West Bengal and Bangladesh who want market news explained simply.
 

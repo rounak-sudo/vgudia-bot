@@ -13,12 +13,12 @@ import os
 import sys
 import traceback
 
-from src import state
-from src.checker import check_facts, check_image
-from src.news import fetch_new_stories
-from src.poster import all_prompts, expected_text, generate_image
-from src.publisher import notify
-from src.writer import write_post
+import state
+from checker import check_facts, check_image
+from news import fetch_new_stories
+from poster import all_prompts, expected_text, generate_image
+from publisher import notify
+from writer import write_post
 
 IMAGE_TRIES = 3   # draw each poster up to 3 times until it passes the text check
 
@@ -118,7 +118,7 @@ def main() -> None:
     else:
         print("Poster check failed; sending to Telegram for review.")
         if os.getenv("TELEGRAM_BOT_TOKEN"):
-            from src import telegram_bot
+            import telegram_bot
             entry["message_id"] = telegram_bot.send_draft(
                 draft_id, [os.path.join(state.ROOT, p) for p in images],
                 "🟡 Needs your OK (poster check failed):\n" + "\n".join(f"- {p}" for p in image_problems[:6]),

@@ -5,7 +5,7 @@ import datetime as dt
 import json
 import os
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.join(ROOT, "state")
 DRAFTS_DIR = os.path.join(ROOT, "drafts")
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
