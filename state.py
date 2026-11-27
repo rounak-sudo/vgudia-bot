@@ -18,6 +18,7 @@ def now_ist() -> dt.datetime:
 
 
 def load() -> dict:
+    ensure_dirs()
     path = os.path.join(STATE_DIR, "state.json")
     if not os.path.exists(path):
         return json.loads(json.dumps(DEFAULTS))
@@ -28,8 +29,17 @@ def load() -> dict:
     return data
 
 
+def ensure_dirs() -> None:
+    # Git only saves folders that contain a file; the workflows expect these folders to exist.
+    for folder in (STATE_DIR, DRAFTS_DIR, os.path.join(ROOT, "logos")):
+        os.makedirs(folder, exist_ok=True)
+        keep = os.path.join(folder, ".keep")
+        if not os.path.exists(keep):
+            open(keep, "w").close()
+
+
 def save(data: dict) -> None:
-    os.makedirs(STATE_DIR, exist_ok=True)
+    ensure_dirs()
     data["seen"] = data["seen"][-1500:]
     data["posted"] = data["posted"][-200:]
     path = os.path.join(STATE_DIR, "state.json")

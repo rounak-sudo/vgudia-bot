@@ -1,26 +1,24 @@
-"""Hourly job, step 1 of 2: fetch news -> Claude writes the post -> fact check ->
-OpenAI draws the poster(s) -> poster check. Passing drafts are marked "ready";
+"""Hourly job, step 1 of 2: fetch news -> AI writes the Bengali post -> fact check ->
+poster(s) made from the vGudia template + a free photo. Passing drafts are marked "ready";
 run_publish.py posts them after the images are pushed to the public repo.
-Drafts that fail a check are sent to Telegram for a manual decision (or simply expire).
 
-    python run_hourly.py              # normal run (needs the keys)
-    python run_hourly.py --no-images  # only Claude writing + fact check (to check the writing)
+    python run_hourly.py              # normal run (needs GEMINI_API_KEY; PEXELS_API_KEY for photos)
+    python run_hourly.py --no-images  # only writing + fact check (to check the writing)
 """
 from __future__ import annotations
 
+import glob
 import json
 import os
 import sys
 import traceback
 
 import state
-from checker import check_facts, check_image
+from checker import check_facts
 from news import fetch_new_stories
-from poster import all_prompts, expected_text, generate_image
+from poster import render_post
 from publisher import notify
 from writer import write_post
-
-IMAGE_TRIES = 3   # draw each poster up to 3 times until it passes the text check
 
 
 def _write(folder: str, name: str, content) -> None:
@@ -51,7 +49,7 @@ def main() -> None:
         print(f"Skipped: {plan['reason']}")
         return
 
-    # 1) Fact check, with one rewrite if it fails.
+    # Fact check, with one rewrite if it fails.
     story = stories[plan["story_index"]]
     facts_ok, problems = check_facts(plan, story)
     if not facts_ok:
@@ -69,9 +67,7 @@ def main() -> None:
     draft_id = now.strftime("%Y%m%d-%H%M")
     folder = os.path.join(state.DRAFTS_DIR, draft_id)
     os.makedirs(folder, exist_ok=True)
-    prompts = all_prompts(plan, now.date())
     _write(folder, "plan.json", plan)
-    _write(folder, "prompts.json", prompts)
     _write(folder, "caption.txt", plan["caption"])
     _write(folder, "linkedin.txt", plan["linkedin_text"])
     print(f"Chosen ({plan['format']}, importance {plan['importance']}): {story.headline}")
@@ -79,51 +75,23 @@ def main() -> None:
         print(f"--no-images: draft text written to drafts/{draft_id}/")
         return
 
-    # 2) Draw each image and check its text; redraw on failure.
-    images, image_problems = [], []
-    for i, prompt in enumerate(prompts):
-        rel = f"drafts/{draft_id}/v1-{i + 1}.jpg"
-        path = os.path.join(state.ROOT, rel)
-        for attempt in range(1, IMAGE_TRIES + 1):
-            generate_image(prompt, path)
-            ok, issues = check_image(path, expected_text(plan, i, now.date()))
-            print(f"  image {i + 1} attempt {attempt}: {'OK' if ok else issues}")
-            if ok:
-                break
-        else:
-            image_problems += [f"slide {i + 1}: {p}" for p in issues]
-        images.append(rel)
-        if image_problems and len(prompts) > 1:
-            # A carousel with a broken slide can't go out; stop here instead of paying for more images.
-            notify(f"⏭️ Not posted (carousel slide {i + 1} failed the poster check {IMAGE_TRIES} times): "
-                   f"{story.headline}\n- " + "\n- ".join(image_problems[:5]))
-            return
+    used = set(st.setdefault("used_photos", []))
+    paths = render_post(plan, now.date(), folder, used)
+    st["used_photos"] = sorted(used)[-500:]
+    # Keep only the finished posters in the repo (photos and HTML were just ingredients).
+    for leftover in glob.glob(os.path.join(folder, "photo-*")) + glob.glob(os.path.join(folder, "slide-*.html")):
+        os.remove(leftover)
 
-    entry = {
+    st["pending"][draft_id] = {
         "created": now.isoformat(),
         "headline": story.headline,
         "title": plan["telegram_title"],
         "importance": plan["importance"],
-        "images": images,
-        "version": 1,
-        "status": "ready" if not image_problems else "review",
-        "problems": image_problems,
-        "message_id": None,
+        "images": [f"drafts/{draft_id}/{os.path.basename(p)}" for p in paths],
+        "status": "ready",
     }
-    st["pending"][draft_id] = entry
     state.save(st)
-
-    if entry["status"] == "ready":
-        print("Passed all checks: will be posted by run_publish.py")
-    else:
-        print("Poster check failed; sending to Telegram for review.")
-        if os.getenv("TELEGRAM_BOT_TOKEN"):
-            import telegram_bot
-            entry["message_id"] = telegram_bot.send_draft(
-                draft_id, [os.path.join(state.ROOT, p) for p in images],
-                "🟡 Needs your OK (poster check failed):\n" + "\n".join(f"- {p}" for p in image_problems[:6]),
-                plan["caption"])
-            state.save(st)
+    print(f"Made {len(paths)} image(s); run_publish.py will post them.")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Use Claude to pick the best market story and write the vGudia post in Bengali."""
+"""Use the AI writer to pick the best market story and write the vGudia post in Bengali."""
 from __future__ import annotations
 
 from llm import ask_json
@@ -24,16 +24,17 @@ Poster fields (they are printed as text on the poster, so keep them SHORT):
 - headline: Bengali, 4-8 words, the core news.
 - headline_accent: a 1-3 word piece copied exactly from headline to colour saffron (the key number or name).
 - banner: Bengali, 3-7 words, the second key point.
-- scene: English, one or two sentences describing a photorealistic background image that fits the story (buildings, trading floor, ships, oil rigs, city skyline, flags of the countries involved, candlestick chart in the sky). No logos, no readable text, no numbers in the scene.
-- data_title + data_items: an optional strip of 2-5 key figures from the story (label + value, values copied exactly; highlight=true on the one that matters most). Use an empty list if the story has fewer than 2 useful numbers.
+- main_wiki_title / main_logo_key: the ONE organisation the story is mainly about, for its logo on the poster. main_wiki_title = the exact title of its English Wikipedia article (e.g. "National Stock Exchange of India", "Reliance Industries", "Reserve Bank of India", "Nvidia"); main_logo_key = a short lowercase slug (e.g. "nse", "reliance-industries", "rbi", "nvidia"). Fill them ONLY for a single, well-known company, exchange, bank or regulator and only when you are sure of the article title; otherwise use empty strings (indices like Nifty or Sensex, countries, sectors and markets in general get empty strings). A wrong logo is worse than none.
+- photo_query: English stock-photo search phrase, 2-4 plain words, for the background photo (e.g. "stock exchange trading", "oil refinery", "cargo ship port", "gold bars", "Mumbai skyline", "US dollar notes", "factory workers"). Generic scenes only: no company names, no people's names.
+- data_title + data_items: an optional strip of 2-5 key figures from the story (label + value, values copied exactly; highlight=true on the one that matters most). Each item also has wiki_title and logo_key, filled with the same rules as main_wiki_title / main_logo_key when the item is a well-known organisation, otherwise empty strings. Use an empty list if the story has fewer than 2 useful numbers.
 - cards: exactly 3 info cards. header 1-3 Bengali words; body 6-14 Bengali words; color "navy" or "red" (use red for one card at most, for a risk/negative/opposing point); icon one of: chart-up, chart-down, bank, globe, handshake, target, coins, oil, factory, ship, warning, document.
 - telegram_title: short English summary for the editor, under 80 characters.
 - importance: 1-5. 5 = big market-moving news most investors should know today (index crash/record, RBI/Fed decision, major policy or tariff move, landmark IPO/listing); 3 = solid sector or company news; 1 = minor. Only 4-5 also go to LinkedIn.
 
 Format (format + slides):
 - "single": one poster. Use this for most news. slides = [].
-- "carousel": the cover poster above plus 2-5 detail slides people swipe through. Choose it only when the story has enough distinct, important facts to fill 3 or more slides - quarterly results, comparisons, policy or budget changes with several parts, a market wrap with several big movers, explainers. Each slide costs extra, so roughly one post in four at most.
-- Each slide: title (Bengali, 2-6 words); points (2-4 Bengali bullet points of 5-14 words, each carrying facts from the story, numbers copied exactly); scene (English, a small photorealistic visual for the slide, no logos, no readable text, no numbers). Slides must not just repeat the cover cards - go deeper.
+- "carousel": the cover poster above plus 2-5 detail slides people swipe through. Choose it only when the story has enough distinct, important facts to fill 3 or more slides - quarterly results, comparisons, policy or budget changes with several parts, a market wrap with several big movers, explainers. Roughly one post in four at most.
+- Each slide: title (Bengali, 2-6 words); points (2-4 Bengali bullet points of 5-14 words, each carrying facts from the story, numbers copied exactly); photo_query (English stock-photo search phrase, 2-4 plain words, different from the cover's). Slides must not just repeat the cover cards - go deeper.
 
 Instagram caption (caption): Bengali, 120-220 words, in this shape:
 1. An emoji + one-line hook headline. For a carousel, add the line "👉 সোয়াইপ করে পুরোটা দেখুন" right after it.
@@ -60,7 +61,9 @@ SCHEMA = {
         "headline": {"type": "string"},
         "headline_accent": {"type": "string"},
         "banner": {"type": "string"},
-        "scene": {"type": "string"},
+        "main_wiki_title": {"type": "string"},
+        "main_logo_key": {"type": "string"},
+        "photo_query": {"type": "string"},
         "data_title": {"type": "string"},
         "data_items": {
             "type": "array",
@@ -68,10 +71,12 @@ SCHEMA = {
                 "type": "object",
                 "properties": {
                     "label": {"type": "string"},
+                    "wiki_title": {"type": "string"},
+                    "logo_key": {"type": "string"},
                     "value": {"type": "string"},
                     "highlight": {"type": "boolean"},
                 },
-                "required": ["label", "value", "highlight"],
+                "required": ["label", "value", "highlight", "wiki_title", "logo_key"],
                 "additionalProperties": False,
             },
         },
@@ -99,9 +104,9 @@ SCHEMA = {
                 "properties": {
                     "title": {"type": "string"},
                     "points": {"type": "array", "items": {"type": "string"}},
-                    "scene": {"type": "string"},
+                    "photo_query": {"type": "string"},
                 },
-                "required": ["title", "points", "scene"],
+                "required": ["title", "points", "photo_query"],
                 "additionalProperties": False,
             },
         },
@@ -109,7 +114,7 @@ SCHEMA = {
         "linkedin_text": {"type": "string"},
     },
     "required": ["decision", "story_index", "reason", "category_tag", "headline",
-                 "headline_accent", "banner", "scene", "data_title", "data_items",
+                 "headline_accent", "banner", "main_wiki_title", "main_logo_key", "photo_query", "data_title", "data_items",
                  "cards", "telegram_title", "importance", "format", "slides", "caption",
                  "linkedin_text"],
     "additionalProperties": False,
@@ -146,11 +151,11 @@ def write_post(stories: list[Story], recent_headlines: list[str],
     if plan["decision"] == "post":
         idx = plan["story_index"]
         if not 0 <= idx < len(stories):
-            raise WriterError(f"Claude chose story {idx}, which does not exist")
+            raise WriterError(f"The writer chose story {idx}, which does not exist")
         if len(plan["cards"]) != 3:
             plan["cards"] = (plan["cards"] + plan["cards"])[:3] if plan["cards"] else []
             if not plan["cards"]:
-                raise WriterError("Claude returned no info cards")
+                raise WriterError("The writer returned no info cards")
         plan["data_items"] = plan["data_items"][:5]
         slides = [s for s in plan["slides"] if s["title"] and s["points"]][:5]
         for s in slides:
