@@ -1,0 +1,53 @@
+name: Flagged drafts
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"     # every 15 minutes (GitHub may run it a few minutes late)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vgudia-state
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Handle Telegram taps, expire and clean up
+        run: python run_approvals.py
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_ORG_ID: ${{ secrets.LINKEDIN_ORG_ID }}
+          IG_GRAPH_HOST: ${{ vars.IG_GRAPH_HOST }}
+          IG_GRAPH_VERSION: ${{ vars.IG_GRAPH_VERSION }}
+          LINKEDIN_VERSION: ${{ vars.LINKEDIN_VERSION }}
+          LINKEDIN_MAX_PER_DAY: ${{ vars.LINKEDIN_MAX_PER_DAY }}
+          LINKEDIN_MIN_IMPORTANCE: ${{ vars.LINKEDIN_MIN_IMPORTANCE }}
+          OPENAI_IMAGE_MODEL: ${{ vars.OPENAI_IMAGE_MODEL }}
+          OPENAI_IMAGE_QUALITY: ${{ vars.OPENAI_IMAGE_QUALITY }}
+          PENDING_HOURS: ${{ vars.PENDING_HOURS }}
+      - name: Save state
+        if: always()
+        run: |
+          git config user.name "vgudia-bot"
+          git config user.email "vgudia-bot@users.noreply.github.com"
+          git add -A drafts state
+          git diff --cached --quiet && exit 0
+          git commit -m "Review $(date -u +%Y-%m-%dT%H:%MZ)"
+          git pull --rebase
+          git push
