@@ -1,0 +1,70 @@
+name: Hourly post
+
+on:
+  schedule:
+    - cron: "5 * * * *"        # every hour at :05
+  workflow_dispatch: {}         # "Run workflow" button for a manual test
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vgudia-state           # never run at the same time as the review job
+  cancel-in-progress: false
+
+env:
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+  IG_USER_ID: ${{ secrets.IG_USER_ID }}
+  LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+  LINKEDIN_ORG_ID: ${{ secrets.LINKEDIN_ORG_ID }}
+  CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
+  OPENAI_IMAGE_MODEL: ${{ vars.OPENAI_IMAGE_MODEL }}
+  OPENAI_IMAGE_QUALITY: ${{ vars.OPENAI_IMAGE_QUALITY }}
+  IG_GRAPH_HOST: ${{ vars.IG_GRAPH_HOST }}
+  IG_GRAPH_VERSION: ${{ vars.IG_GRAPH_VERSION }}
+  LINKEDIN_VERSION: ${{ vars.LINKEDIN_VERSION }}
+  LINKEDIN_MAX_PER_DAY: ${{ vars.LINKEDIN_MAX_PER_DAY }}
+  LINKEDIN_MIN_IMPORTANCE: ${{ vars.LINKEDIN_MIN_IMPORTANCE }}
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: |
+          git config user.name "vgudia-bot"
+          git config user.email "vgudia-bot@users.noreply.github.com"
+
+      - name: Write, check and draw
+        run: python run_hourly.py
+
+      - name: Upload images (Instagram downloads them from here)
+        if: always()
+        run: |
+          git add -A drafts state
+          git diff --cached --quiet && exit 0
+          git commit -m "Draft $(date -u +%Y-%m-%dT%H:%MZ)"
+          git pull --rebase
+          git push
+
+      - name: Post to Instagram and LinkedIn
+        run: python run_publish.py
+
+      - name: Save state
+        if: always()
+        run: |
+          git add -A drafts state
+          git diff --cached --quiet && exit 0
+          git commit -m "Posted $(date -u +%Y-%m-%dT%H:%MZ)"
+          git pull --rebase
+          git push
